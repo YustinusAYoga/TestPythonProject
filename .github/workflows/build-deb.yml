@@ -42,6 +42,7 @@ jobs:
           mkdir -p ${PKG_DIR}/var/log/TestPythonProject/PythonScriptSysd
 
           # ── Copy application files ──────────────────────────────────
+          echo dir
           cp -r TestPythonProject/PythonScript/. ${PKG_DIR}/opt/TestPythonProject/PythonScript/
           cp -r TestPythonProject/PythonScriptSysd/.   ${PKG_DIR}/opt/TestPythonProject/PythonScriptSysd/
 
