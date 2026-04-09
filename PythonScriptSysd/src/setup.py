@@ -1,4 +1,5 @@
 from setuptools import setup
+from Cython.Build import cythonize
 
 setup(
     name="python-hello-service",
@@ -11,5 +12,6 @@ setup(
     data_files=[
         ('/etc/systemd/system', ['helloworld.service'])
     ],
-    install_requires=[], # Add dependencies here, e.g., ['requests']
+    install_requires=[], # Add dependencies here, e.g., ['requests'],
+    ext_modules=cythonize("helloworldsysd.pyx", compiler_directives={"language_level": "3"})
 )
