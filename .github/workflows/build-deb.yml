@@ -43,6 +43,9 @@ jobs:
 
           # ── Copy application files ──────────────────────────────────
           echo dir
+          pwd
+          ls -la
+          tree -L 2
           cp -r TestPythonProject/PythonScript ${PKG_DIR}/opt/TestPythonProject/PythonScript
           cp -r TestPythonProject/PythonScriptSysd ${PKG_DIR}/opt/TestPythonProject/PythonScriptSysd
 
