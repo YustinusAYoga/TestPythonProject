@@ -44,10 +44,12 @@ jobs:
           # ── Copy application files ──────────────────────────────────
           echo dir
           pwd
-          ls -la
-          tree -L 2
+
           cp -r ./PythonScript ${PKG_DIR}/opt/TestPythonProject/PythonScript
           cp -r ./PythonScriptSysd ${PKG_DIR}/opt/TestPythonProject/PythonScriptSysd
+
+          ls -la
+          tree -L 2
 
           chmod +x ${PKG_DIR}/opt/TestPythonProject/PythonScript/main.py
           chmod +x ${PKG_DIR}/opt/TestPythonProject/PythonScriptSysd/main.py
