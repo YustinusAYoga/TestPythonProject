@@ -45,8 +45,8 @@ jobs:
           echo dir
           pwd
 
-          cp -r ./PythonScript/ ${PKG_DIR}/opt/TestPythonProject/PythonScript/
-          cp -r ./PythonScriptSysd/ ${PKG_DIR}/opt/TestPythonProject/PythonScriptSysd/
+          cp -r ./PythonScript/ ${PKG_DIR}/opt/TestPythonProject/
+          cp -r ./PythonScriptSysd/ ${PKG_DIR}/opt/TestPythonProject/
 
           ls -la
           tree -L 7
