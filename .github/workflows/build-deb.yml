@@ -12,15 +12,267 @@ permissions:
   contents: write
 
 jobs:
- build:
+  build-deb:
+    name: Build TestPythonProject_${{ github.event.inputs.version }}_armhf.deb
     runs-on: ubuntu-latest
+
     steps:
       - name: Checkout repository
         uses: actions/checkout@v4
-        
-      - name: Show directory structure
+
+      - name: Install packaging tools
         run: |
-          pwd
-          ls -la
-          tree -L 2
+          sudo apt-get update
+          sudo apt-get install -y dpkg-dev debhelper
+
+      - name: Build Debian package structure
+        run: |
+          VERSION="${{ github.event.inputs.version }}"
+          PKG_NAME="TestPythonProject"
+          PKG_DIR="${PKG_NAME}_${VERSION}_armhf"
+
+          # ── Directory layout ────────────────────────────────────────
+          mkdir -p ${PKG_DIR}/DEBIAN
+          mkdir -p ${PKG_DIR}/opt/TestPythonProject/PythonScript
+          mkdir -p ${PKG_DIR}/opt/TestPythonProject/PythonScriptSysd
+          mkdir -p ${PKG_DIR}/lib/systemd/system
+          mkdir -p ${PKG_DIR}/etc/TestPythonProject/PythonScript
+          mkdir -p ${PKG_DIR}/etc/TestPythonProject/PythonScriptSysd
+          mkdir -p ${PKG_DIR}/var/log/TestPythonProject/PythonScript
+          mkdir -p ${PKG_DIR}/var/log/TestPythonProject/PythonScriptSysd
+
+          # ── Copy application files ──────────────────────────────────
+          echo dir
+          cp -r TestPythonProject/PythonScript ${PKG_DIR}/opt/TestPythonProject/PythonScript
+          cp -r TestPythonProject/PythonScriptSysd ${PKG_DIR}/opt/TestPythonProject/PythonScriptSysd
+
+          chmod +x ${PKG_DIR}/opt/TestPythonProject/PythonScript/main.py
+          chmod +x ${PKG_DIR}/opt/TestPythonProject/PythonScriptSysd/main.py
+
+          # ── DEBIAN/control ──────────────────────────────────────────
+          cat > ${PKG_DIR}/DEBIAN/control <<EOF
+          Package: ${PKG_NAME}
+          Version: ${VERSION}
+          Section: utils
+          Priority: optional
+          Architecture: armhf
+          Depends: python3 (>= 3.8), python3-pip
+          Maintainer: Yustinus A Yoga <your@email.com>
+          Description: RPi Indo - System Health & MQTT Client
+           Bundles two services for Raspberry Pi (armhf):
+             - PythonScript : monitors CPU, memory, disk, temperature
+             - PythonScriptSysd   : MQTT message broker client
+           Both are installed under /opt/TestPythonProject and managed by systemd.
+          EOF
+
+          # ── DEBIAN/conffiles ────────────────────────────────────────
+          cat > ${PKG_DIR}/DEBIAN/conffiles <<EOF
+          /etc/TestPythonProject/PythonScript/config.yaml
+          /etc/TestPythonProject/PythonScriptSysd/config.yaml
+          EOF
+
+          # ── DEBIAN/postinst ─────────────────────────────────────────
+          cat > ${PKG_DIR}/DEBIAN/postinst <<'POSTINST'
+          #!/bin/bash
+          set -e
+
+          # Create shared service user once
+          if ! id -u TestPythonProject &>/dev/null; then
+              useradd --system --no-create-home \
+                      --shell /usr/sbin/nologin \
+                      --comment "TestPythonProject service user" \
+                      TestPythonProject
+          fi
+
+          # Ownership
+          chown -R TestPythonProject:TestPythonProject /opt/TestPythonProject
+          chown -R TestPythonProject:TestPythonProject /etc/TestPythonProject
+          chown -R TestPythonProject:TestPythonProject /var/log/TestPythonProject
+
+          # Install Python deps for each service
+          for SERVICE in PythonScript PythonScriptSysd; do
+              REQ="/opt/TestPythonProject/${SERVICE}/requirements.txt"
+              if [ -f "${REQ}" ]; then
+                  echo "Installing Python dependencies for ${SERVICE}..."
+                  python3 -m pip install --quiet --no-cache-dir -r "${REQ}"
+              fi
+          done
+
+          # Enable and start both services
+          systemctl daemon-reload
+          for SERVICE in TestPythonProject-PythonScript TestPythonProject-PythonScriptSysd; do
+              systemctl enable  ${SERVICE}.service
+              systemctl restart ${SERVICE}.service || true
+          done
+
+          echo "TestPythonProject installed — both services started."
+          POSTINST
+          chmod 755 ${PKG_DIR}/DEBIAN/postinst
+
+          # ── DEBIAN/prerm ────────────────────────────────────────────
+          cat > ${PKG_DIR}/DEBIAN/prerm <<'PRERM'
+          #!/bin/bash
+          set -e
+          for SERVICE in TestPythonProject-PythonScript TestPythonProject-PythonScriptSysd; do
+              systemctl stop    ${SERVICE}.service || true
+              systemctl disable ${SERVICE}.service || true
+          done
+          PRERM
+          chmod 755 ${PKG_DIR}/DEBIAN/prerm
+
+          # ── DEBIAN/postrm ───────────────────────────────────────────
+          cat > ${PKG_DIR}/DEBIAN/postrm <<'POSTRM'
+          #!/bin/bash
+          set -e
+          systemctl daemon-reload || true
+          if [ "$1" = "purge" ]; then
+              rm -rf /opt/TestPythonProject
+              rm -rf /etc/TestPythonProject
+              rm -rf /var/log/TestPythonProject
+              userdel TestPythonProject 2>/dev/null || true
+          fi
+          POSTRM
+          chmod 755 ${PKG_DIR}/DEBIAN/postrm
+
+          # ── systemd: TestPythonProject-PythonScript.service ─────────────────
+          cat > ${PKG_DIR}/lib/systemd/system/TestPythonProject-PythonScript.service <<EOF
+          [Unit]
+          Description=RPi Indo - System Health Monitor
+          Documentation=https://github.com/${{ github.repository }}
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          User=TestPythonProject
+          Group=TestPythonProject
+          WorkingDirectory=/opt/TestPythonProject/PythonScript
+          ExecStart=/usr/bin/python3 /opt/TestPythonProject/PythonScript/main.py
+          ExecReload=/bin/kill -HUP \$MAINPID
+          Restart=on-failure
+          RestartSec=10s
+          TimeoutStopSec=30s
+          StandardOutput=journal
+          StandardError=journal
+          SyslogIdentifier=TestPythonProject-PythonScript
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ReadWritePaths=/opt/TestPythonProject/PythonScript /etc/TestPythonProject/PythonScript /var/log/TestPythonProject/PythonScript
+          PrivateTmp=true
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+
+          # ── systemd: TestPythonProject-PythonScriptSysd.service ───────────────────
+          cat > ${PKG_DIR}/lib/systemd/system/TestPythonProject-PythonScriptSysd.service <<EOF
+          [Unit]
+          Description=RPi Indo - MQTT Client
+          Documentation=https://github.com/${{ github.repository }}
+          After=network-online.target
+          Wants=network-online.target
+
+          [Service]
+          Type=simple
+          User=TestPythonProject
+          Group=TestPythonProject
+          WorkingDirectory=/opt/TestPythonProject/PythonScriptSysd
+          ExecStart=/usr/bin/python3 /opt/TestPythonProject/PythonScriptSysd/main.py
+          ExecReload=/bin/kill -HUP \$MAINPID
+          Restart=on-failure
+          RestartSec=10s
+          TimeoutStopSec=30s
+          StandardOutput=journal
+          StandardError=journal
+          SyslogIdentifier=TestPythonProject-PythonScriptSysd
+          NoNewPrivileges=true
+          ProtectSystem=strict
+          ReadWritePaths=/opt/TestPythonProject/PythonScriptSysd /etc/TestPythonProject/PythonScriptSysd /var/log/TestPythonProject/PythonScriptSysd
+          PrivateTmp=true
+
+          [Install]
+          WantedBy=multi-user.target
+          EOF
+
+          # ── Default configs (preserved across upgrades) ─────────────
+          cat > ${PKG_DIR}/etc/TestPythonProject/PythonScript/config.yaml <<EOF
+          # PythonScript configuration — preserved across upgrades
+          app:
+            name: TestPythonProject-PythonScript
+            version: ${VERSION}
+            debug: false
+          logging:
+            level: INFO
+            file: /var/log/TestPythonProject/PythonScript/app.log
+          EOF
+
+          cat > ${PKG_DIR}/etc/TestPythonProject/PythonScriptSysd/config.yaml <<EOF
+          # PythonScriptSysd configuration — preserved across upgrades
+          app:
+            name: TestPythonProject-PythonScriptSysd
+            version: ${VERSION}
+            debug: false
+          mqtt:
+            broker: localhost
+            port: 1883
+            topic: TestPythonProject/#
+            client_id: TestPythonProject-PythonScriptSysd
+          logging:
+            level: INFO
+            file: /var/log/TestPythonProject/PythonScriptSysd/app.log
+          EOF
+
+          echo "PKG_DIR=${PKG_DIR}" >> $GITHUB_ENV
+          echo "VERSION=${VERSION}"   >> $GITHUB_ENV
+
+      - name: Build .deb
+        run: |
+          dpkg-deb --build --root-owner-group "${{ env.PKG_DIR }}"
+          echo "=== Package info ==="
+          dpkg-deb --info    TestPythonProject_${{ github.event.inputs.version }}_armhf.deb
+          echo "=== Package contents ==="
+          dpkg-deb --contents TestPythonProject_${{ github.event.inputs.version }}_armhf.deb
+
+      - name: Upload artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: TestPythonProject_${{ github.event.inputs.version }}_armhf
+          path: "TestPythonProject_${{ github.event.inputs.version }}_armhf.deb"
+          retention-days: 30
+
+      - name: Create GitHub Release and attach .deb
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: "v${{ github.event.inputs.version }}"
+          name: "Release v${{ github.event.inputs.version }}"
+          draft: false
+          prerelease: false
+          files: "TestPythonProject_${{ github.event.inputs.version }}_armhf.deb"
+          body: |
+            ## TestPythonProject v${{ github.event.inputs.version }}
+
+            Single `.deb` bundling **PythonScript** and **PythonScriptSysd** services.
+
+            ### Install on Raspberry Pi (armhf)
+            ```bash
+            wget https://github.com/${{ github.repository }}/releases/download/v${{ github.event.inputs.version }}/TestPythonProject_${{ github.event.inputs.version }}_armhf.deb
+            sudo dpkg -i TestPythonProject_${{ github.event.inputs.version }}_armhf.deb
+            sudo apt-get install -f          # resolve any missing deps
+            ```
+
+            ### Verify services
+            ```bash
+            sudo systemctl status TestPythonProject-PythonScript.service
+            sudo systemctl status TestPythonProject-PythonScriptSysd.service
+
+            journalctl -u TestPythonProject-PythonScript.service -f
+            journalctl -u TestPythonProject-PythonScriptSysd.service   -f
+            ```
+
+            ### Uninstall
+            ```bash
+            sudo apt-get remove TestPythonProject   # keep config files
+            sudo apt-get purge  TestPythonProject   # remove everything
+            ```
+
           
