@@ -49,7 +49,7 @@ jobs:
           cp -r ./PythonScriptSysd/ ${PKG_DIR}/opt/TestPythonProject/PythonScriptSysd/
 
           ls -la
-          tree -L 2
+          tree -L 7
 
           chmod +x ${PKG_DIR}/opt/TestPythonProject/PythonScript/main.py
           chmod +x ${PKG_DIR}/opt/TestPythonProject/PythonScriptSysd/main.py
