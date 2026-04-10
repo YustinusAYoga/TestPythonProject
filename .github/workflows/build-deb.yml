@@ -46,8 +46,8 @@ jobs:
           pwd
           ls -la
           tree -L 2
-          cp -r TestPythonProject/PythonScript ${PKG_DIR}/opt/TestPythonProject/PythonScript
-          cp -r TestPythonProject/PythonScriptSysd ${PKG_DIR}/opt/TestPythonProject/PythonScriptSysd
+          cp -r ./PythonScript ${PKG_DIR}/opt/TestPythonProject/PythonScript
+          cp -r ./PythonScriptSysd ${PKG_DIR}/opt/TestPythonProject/PythonScriptSysd
 
           chmod +x ${PKG_DIR}/opt/TestPythonProject/PythonScript/main.py
           chmod +x ${PKG_DIR}/opt/TestPythonProject/PythonScriptSysd/main.py
